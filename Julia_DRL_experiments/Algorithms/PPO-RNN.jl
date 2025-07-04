@@ -64,9 +64,9 @@ function PPORNNAgent(
 
     # Policy network with LSTM
     policy_net = Chain(
-        # Dense(input_dim => hidden_dim, tanh),
-        # LSTM(hidden_dim => rnn_hidden_size),
-        LSTM(input_dim => rnn_hidden_size),
+        Dense(input_dim => hidden_dim, tanh),
+        LSTM(hidden_dim => rnn_hidden_size),
+        # LSTM(input_dim => rnn_hidden_size),
         Dense(rnn_hidden_size => hidden_dim, tanh),
         Dense(hidden_dim => n_actions)
     ) |> device
