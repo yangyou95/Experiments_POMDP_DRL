@@ -1,4 +1,4 @@
-# README
+<!-- # README
 
 ## Installation Instructions
 
@@ -24,4 +24,18 @@ Once the dependencies are installed, you can run your script as follows:
 ```bash
 python sb3_RecurrentPPO.py
 ```
+ -->
 
+
+# README
+
+## INSTALL JULIA
+
+## INSTALL IJULIA
+
+## INSTALL POMDPs.jl
+
+## Training Tips
+- First try PPO-RNN
+- PPO-RNN seems better with large batch size
+- DRQN seems better with very small batch size (4-32)
