@@ -9,7 +9,7 @@ mutable struct PPORNNAgent
     value_net::Chain
     optimizer_policy::Any
     optimizer_value::Any
-    action_space::UnitRange{Int}
+    action_space::Any
     γ::Float32
     λ::Float32
     ϵ::Float32
@@ -34,7 +34,8 @@ end
 
 # === 2. 初始化函数 ===
 function PPORNNAgent(
-    action_space::UnitRange{Int}, 
+    action_space::Any, 
+    action_dim::Int,
     state_dim::Int;
     hidden_dim=64,
     rnn_hidden_size=128,
@@ -60,21 +61,23 @@ function PPORNNAgent(
     n_obs = state_dim
 
     # Input dimension: observation + one-hot action
-    input_dim = n_obs + n_actions 
+    input_dim = n_obs + action_dim
+ 
 
     # Policy network with LSTM
     policy_net = Chain(
-        Dense(input_dim => hidden_dim, tanh),
-        LSTM(hidden_dim => rnn_hidden_size),
-        # LSTM(input_dim => rnn_hidden_size),
+        # Dense(input_dim => hidden_dim, tanh),
+        # LSTM(hidden_dim => rnn_hidden_size),
+        LSTM(input_dim => rnn_hidden_size),
         Dense(rnn_hidden_size => hidden_dim, tanh),
         Dense(hidden_dim => n_actions)
     ) |> device
     
     # Value network with LSTM
     value_net = Chain(
-        Dense(input_dim => hidden_dim, tanh),
-        LSTM(hidden_dim => rnn_hidden_size),
+        # Dense(input_dim => hidden_dim, tanh),
+        # LSTM(hidden_dim => rnn_hidden_size),
+        LSTM(input_dim => rnn_hidden_size),
         Dense(rnn_hidden_size => hidden_dim, tanh),
         Dense(hidden_dim => 1, identity)
     ) |> device
@@ -102,26 +105,17 @@ function reset_hidden_states!(agent::PPORNNAgent)
     Flux.reset!(agent.value_net)
 end
 
-function process_action(action::Int, action_space::UnitRange{Int})
-    len = length(action_space)
-    idx = action - first(action_space) + 1
-    (idx < 1 || idx > len) && error("Action $action not in action space")
-    onehot = zeros(Float32, len)
-    onehot[idx] = 1.0f0
-    return onehot
-end
-
 # === 5. 构建动作-观察输入 ===
 function build_action_obs_input(state, prev_action::Int, agent::PPORNNAgent)
     # 将状态转换为Float32向量
     state_vec = Float32.(vec(state))
     
-    # 创建前一个动作的one-hot编码
-    action_onehot = process_action(prev_action, agent.action_space)
+    # 创建前一个动作的vector
+    action_vec = process_action(prev_action, agent.action_space)
     
     # 拼接状态和动作
     # input_vec = vcat(state_vec, action_onehot)
-    input_vec = vcat(action_onehot, state_vec)
+    input_vec = vcat(action_vec, state_vec)
 
     return input_vec
 end
@@ -514,6 +508,9 @@ function compute_policy_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
                     # 计算新的log概率
                     # onehot_action = onehotbatch([actions[t]], agent.action_space) |> agent.device
                     onehot_action = onehotbatch([actions[t]], 1:length(agent.action_space)) |> agent.device
+                    # println("actions[t]: ", actions[t])
+                    # action_vec = process_action(actions[t], agent.action_space)|> agent.device
+                    # selected_prob = sum(probs .* action_vec)
                     selected_prob = sum(probs .* onehot_action)
                     new_log_prob = log(selected_prob + 1f-8)
                     
