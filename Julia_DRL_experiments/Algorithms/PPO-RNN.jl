@@ -130,7 +130,7 @@ function collect_single_env_trajectory(env, agent::PPORNNAgent, steps_per_env::I
     episode_rewards = Float32[]
     
     state = reset!(env)
-    # 为每个线程创建独立的网络副本来避免竞争条件
+    # Create independent network copies for each thread
     policy_net_copy = deepcopy(agent.policy_net)
     value_net_copy = deepcopy(agent.value_net)
     Flux.reset!(policy_net_copy)
@@ -151,40 +151,44 @@ function collect_single_env_trajectory(env, agent::PPORNNAgent, steps_per_env::I
     prev_action = 1
     
     while steps_collected < steps_per_env
-        # 构建动作-观察输入
+        # Build action-observation input
         action_obs_input = build_action_obs_input(state, prev_action, agent)
         action_obs_input_gpu = agent.device(reshape(action_obs_input, :, 1))
         
-        # 选择动作
+        # Select action
         logits = policy_net_copy(action_obs_input_gpu)
         probs = softmax(logits)
-        dist = Categorical(cpu(vec(probs)))
+        probs_cpu = cpu(vec(probs))
+        dist = Categorical(probs_cpu)
         action = rand(dist)
         log_prob = logpdf(dist, action)
-        value = value_net_copy(action_obs_input_gpu)[1]
         
-        # 环境交互
+        # Get value - fix scalar indexing
+        value_output = value_net_copy(action_obs_input_gpu)
+        value = cpu(vec(value_output))[1]  # Move to CPU first, then index
+        
+        # Environment interaction
         next_state, reward, done = step!(env, action)
         current_ep_reward += reward
         
-        # 存储数据
+        # Store data
         push!(current_episode[:states], state)
         push!(current_episode[:actions], action)
         push!(current_episode[:prev_actions], prev_action)
         push!(current_episode[:rewards], Float32(reward))
         push!(current_episode[:dones], done)
         push!(current_episode[:old_log_probs], Float32(log_prob))
-        push!(current_episode[:values], Float32(cpu(value)))
+        push!(current_episode[:values], Float32(value))
         
         steps_collected += 1
         prev_action = action
         
-        # Episode结束或达到最大长度
+        # Episode end or max length reached
         if done || length(current_episode[:states]) >= max_ep_len
             push!(episodes, current_episode)
             push!(episode_rewards, current_ep_reward)
             
-            # 重置episode
+            # Reset episode
             current_episode = Dict(
                 :states => [],
                 :actions => Int[],
@@ -204,7 +208,7 @@ function collect_single_env_trajectory(env, agent::PPORNNAgent, steps_per_env::I
         end
     end
     
-    # 如果还有未完成的episode，也加入
+    # Add unfinished episode if exists
     if !isempty(current_episode[:states])
         push!(episodes, current_episode)
         push!(episode_rewards, current_ep_reward)
@@ -480,13 +484,14 @@ function update_policy!(agent::PPORNNAgent, sequences)
 end
 
 # === 13. 计算单个策略批次损失 ===
+# 1. Fix compute_policy_batch_loss function
 function compute_policy_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
     loss, grads = Flux.withgradient(agent.policy_net) do model
         batch_loss = 0.0f0
         valid_samples = 0
         
         for seq_idx in batch_indices
-            # 重置隐藏状态
+            # Reset hidden states
             Flux.reset!(model)
             
             seq = sequences[seq_idx]
@@ -496,43 +501,54 @@ function compute_policy_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
             advantages = agent.device(seq[:advantages])
             mask = seq[:mask]
             
-            # 前向传播整个序列
-            logits_seq = model(action_obs_inputs)
+            # Forward propagation for entire sequence
+            logits_seq = model(action_obs_inputs)  # Shape: (n_actions, sequence_length)
             
-            # 计算每个时间步的损失
-            for t in 1:agent.sequence_length
-                if mask[t]
-                    logits = logits_seq[:, t:t]
-                    probs = softmax(logits)
-                    
-                    # 计算新的log概率
-                    # onehot_action = onehotbatch([actions[t]], agent.action_space) |> agent.device
-                    onehot_action = onehotbatch([actions[t]], 1:length(agent.action_space)) |> agent.device
-                    # println("actions[t]: ", actions[t])
-                    # action_vec = process_action(actions[t], agent.action_space)|> agent.device
-                    # selected_prob = sum(probs .* action_vec)
-                    selected_prob = sum(probs .* onehot_action)
-                    new_log_prob = log(selected_prob + 1f-8)
-                    
-                    # PPO损失
-                    ratio = exp(new_log_prob - old_log_probs[t])
-                    surr1 = ratio * advantages[t]
-                    surr2 = clamp(ratio, 1f0 - agent.ϵ, 1f0 + agent.ϵ) * advantages[t]
-                    policy_loss = -min(surr1, surr2)
-                    
-                    # 熵损失
-                    entropy = -sum(probs .* log.(probs .+ 1f-8))
-                    
-                    batch_loss += policy_loss - agent.ent_coef * entropy
-                    valid_samples += 1
-                end
+            # Process all valid timesteps at once to avoid scalar indexing
+            valid_indices = findall(mask)
+            
+            if !isempty(valid_indices)
+                # Extract valid timesteps - use view instead of scalar indexing
+                valid_logits = logits_seq[:, valid_indices]  # (n_actions, n_valid)
+                valid_actions = actions[valid_indices]
+                valid_old_log_probs = old_log_probs[valid_indices] |> agent.device
+                valid_advantages = advantages[valid_indices] |> agent.device
+                
+                # Convert to GPU arrays
+                valid_actions_gpu = agent.device(valid_actions)
+                
+                # Compute probabilities for all valid timesteps
+                probs = softmax(valid_logits)  # (n_actions, n_valid)
+                
+                # Create one-hot encoding for all actions at once
+                onehot_actions = onehotbatch(valid_actions, 1:length(agent.action_space)) |> agent.device
+                
+                # Compute new log probabilities using broadcasting
+                selected_probs = sum(probs .* onehot_actions, dims=1)  # (1, n_valid)
+                new_log_probs = log.(selected_probs .+ 1f-8)  # (1, n_valid)
+                
+                # Reshape to match dimensions
+                new_log_probs = vec(new_log_probs)  # (n_valid,)
+                
+                # PPO loss computation
+                ratios = exp.(new_log_probs .- valid_old_log_probs)
+                surr1 = ratios .* valid_advantages
+                surr2 = clamp.(ratios, 1f0 - agent.ϵ, 1f0 + agent.ϵ) .* valid_advantages
+                policy_losses = -min.(surr1, surr2)
+                
+                # Entropy loss
+                entropies = -sum(probs .* log.(probs .+ 1f-8), dims=1)  # (1, n_valid)
+                
+                # Sum losses
+                batch_loss += sum(policy_losses) - agent.ent_coef * sum(entropies)
+                valid_samples += length(valid_indices)
             end
         end
         
         batch_loss / max(valid_samples, 1)
     end
     
-    # 梯度裁剪和更新
+    # Gradient clipping and update
     if agent.clip_grads
         grads = clip_gradients(grads, agent.clip_value)
     end
@@ -540,6 +556,7 @@ function compute_policy_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
     Flux.update!(agent.optimizer_policy, agent.policy_net, grads[1])
     return loss
 end
+
 
 # === 14. 并行价值函数更新 ===
 function update_value!(agent::PPORNNAgent, sequences)
@@ -564,45 +581,38 @@ function update_value!(agent::PPORNNAgent, sequences)
     return mean(value_losses)
 end
 
-# === 15. 计算单个价值批次损失 ===
-function compute_value_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
+function compute_value_batch_loss(agent, seqs, batch_idx)
     loss, grads = Flux.withgradient(agent.value_net) do model
-        batch_loss = 0.0f0
-        valid_samples = 0
+        batch_loss = 0f0
         
-        for seq_idx in batch_indices
-            # 重置隐藏状态
+        for idx in batch_idx
             Flux.reset!(model)
             
-            seq = sequences[seq_idx]
-            action_obs_inputs = agent.device(seq[:action_obs_inputs])
+            seq = seqs[idx]
+            inputs = agent.device(seq[:action_obs_inputs])
             returns = agent.device(seq[:returns])
             mask = seq[:mask]
             
-            # 前向传播整个序列
-            values_pred = model(action_obs_inputs)
+            # Forward once for the whole sequence
+            values_output = model(inputs)  # Shape: (1, sequence_length)
             
-            # 计算每个时间步的损失
-            for t in 1:agent.sequence_length
-                if mask[t]
-                    mse_loss = (values_pred[1, t] - returns[t])^2
-                    batch_loss += mse_loss
-                    valid_samples += 1
-                end
-            end
+            # Extract values properly without scalar indexing
+            values = vec(values_output)  # Convert to vector: (sequence_length,)
+            
+            # Use boolean indexing efficiently
+            mask_gpu = agent.device(mask)
+            valid_values = values[mask_gpu]
+            valid_returns = returns[mask_gpu]
+            
+            batch_loss += mean((valid_values .- valid_returns).^2)
         end
-        
-        batch_loss / max(valid_samples, 1)
-    end
-    
-    # 梯度裁剪
-    if agent.clip_grads
-        grads = clip_gradients(grads, agent.clip_value)
+        batch_loss
     end
     
     Flux.update!(agent.optimizer_value, agent.value_net, grads[1])
     return loss
 end
+
 
 # === 16. 梯度裁剪函数 ===
 function clip_gradients(grads, clip_value)
@@ -695,13 +705,14 @@ function evaluate(env, agent::PPORNNAgent; num_episodes=50, max_steps=nothing)
         prev_action = 1
         
         for i in 0:max_steps
-            # build input (action + observation)
+            # Build input (action + observation)
             action_obs_input = build_action_obs_input(state, prev_action, agent)
             action_obs_input_gpu = agent.device(reshape(action_obs_input, :, 1))
             
-            # select action
+            # Select action - fix scalar indexing
             logits = agent.policy_net(action_obs_input_gpu)
-            action = argmax(cpu(vec(logits)))
+            logits_cpu = cpu(vec(logits))
+            action = argmax(logits_cpu)  # Move to CPU first, then find argmax
             
             state, reward, done = step!(env, action)
             ep_reward += (gamma^i)*reward
@@ -714,4 +725,14 @@ function evaluate(env, agent::PPORNNAgent; num_episodes=50, max_steps=nothing)
     end
     
     return total_reward / num_episodes
+end
+
+# 5. Add helper function for safe GPU operations
+function safe_gpu_indexing(arr, indices)
+    """Helper function to safely index GPU arrays"""
+    if isa(arr, CuArray)
+        return arr[indices]
+    else
+        return arr[indices]
+    end
 end
