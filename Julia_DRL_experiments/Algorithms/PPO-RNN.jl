@@ -2,6 +2,10 @@ using Flux, Statistics, ProgressMeter, Random, Distributions
 using Flux: params, gradient, logitcrossentropy, onehotbatch
 using Zygote
 using Base.Threads
+# Native Julia W&B Integration
+using Wandb
+using Dates
+using LoggingExtras
 
 # === 1. 核心数据结构 ===
 mutable struct PPORNNAgent
@@ -640,15 +644,33 @@ function clip_gradients(grads, clip_value)
 end
 
 # === 17. 训练循环 ===
-function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_interval=100, verbose=true)
+function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_interval=100, verbose=true, run_name::String="PPO-RNN-Training")
+    # Initialize native Julia Wandb run
+    lg = WandbLogger(
+        project = "PPO-RNN-Training-Julia",
+        name = run_name,
+        config = Dict(
+            "gamma" => agent.γ,
+            "lambda" => agent.λ,
+            "epsilon" => agent.ϵ,
+            "entropy_coef" => agent.ent_coef,
+            "rnn_hidden_size" => agent.rnn_hidden_size,
+            "sequence_length" => agent.sequence_length,
+            "batch_size" => agent.batch_size,
+            "minibatch_size" => agent.minibatch_size,
+            "n_epochs" => agent.n_epochs
+        )
+    )
+    global_logger(lg)
+
     all_rewards = Float32[]
     policy_losses = Float32[]
     value_losses = Float32[]
     eval_scores = Float32[]
-    
+
     # 检查是否使用并行收集
     use_parallel = agent.use_threading && isa(env_or_constructor, Function)
-    
+
     @showprogress for update in 1:num_updates
         # collect trajectories
         if use_parallel
@@ -656,22 +678,23 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
         else
             sequences, avg_reward = collect_trajectories(env_or_constructor, agent, agent.batch_size)
         end
-        
+
         # update network
         policy_loss = update_policy!(agent, sequences)
         value_loss = update_value!(agent, sequences)
-        
+
         # log results
         push!(all_rewards, avg_reward)
         push!(policy_losses, policy_loss)
         push!(value_losses, value_loss)
-        
+        @info "metrics" avg_reward=avg_reward policy_loss=policy_loss value_loss=value_loss step=update
+
         # evaluation
         if update % eval_interval == 0
             eval_env = use_parallel ? env_or_constructor() : env_or_constructor
             eval_score = evaluate(eval_env, agent)
             push!(eval_scores, eval_score)
-            
+            @info "metrics" eval_score=eval_score step=update
             if verbose
                 println("Update $update | ",
                       "Threads: $(nthreads()) | ",
@@ -681,11 +704,12 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
                       "Eval: $(round(eval_score, digits=2))")
             end
         end
-        
+
         # decay entropy coefficient
         agent.ent_coef *= 0.995f0
     end
-    
+
+    close(lg)
     return (all_rewards, policy_losses, value_losses, eval_scores)
 end
 

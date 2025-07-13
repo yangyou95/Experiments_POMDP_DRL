@@ -9,15 +9,37 @@
 # Pkg.add("Zygote")
 # using Pkg
 # Pkg.add("LuxCUDA")
-using CUDA
+using ArgParse
+
+# parse command-line arguments for grid size and observability
+function parse_args()
+    s = ArgParseSettings()
+    @add_arg_table s begin
+        "--rows"
+        help = "Number of rows in RockSample grid"
+        arg_type = Int
+
+        "--cols"
+        help = "Number of columns in RockSample grid"
+        arg_type = Int
+    end
+    return ArgParse.parse_args(s)
+end
+
+const ARGS_PARSED = parse_args()
+#Print the parsed arguments
+println("Parsed arguments: $(ARGS_PARSED)")
+const ROWS = ARGS_PARSED["rows"]
+const COLS = ARGS_PARSED["cols"]
+const BOOL_FULL_OBSERVABILITY = false#ARGS_PARSED["full-observability"]
+# using CUDA
 include("../Envs/Env.jl")
 include("../Algorithms/PPO-RNN.jl")
-
 using RockSample
 
-pomdp = RockSamplePOMDP(7, 8)
-pomdp_name = "RS78"
-bool_full_observability = false
+pomdp = RockSamplePOMDP(ROWS, COLS)
+pomdp_name = "RS$(ROWS)$(COLS)"
+bool_full_observability = BOOL_FULL_OBSERVABILITY
 env = Env(pomdp, bool_full_observability)
 action_space = GetActionSpace(env)
 function create_env()
@@ -50,15 +72,21 @@ training_episodes = 10000
 batch_size = 2048
 
 
+# if want to use gpu, need to uncomment the below line, and use device=Flux.gpu
+# using CUDA
+
 agent = PPORNNAgent(action_space, action_dim, state_dim;
     hidden_dim=layer_size, 
     rnn_hidden_size=rnn_hidden_size, 
     batch_size=batch_size, 
-    device=Flux.gpu) 
+    device=Flux.cpu) 
 
 
-# 训练
-rewards, losses, evals = train!(create_env, agent, training_episodes)
+    # 训练
+rewards, losses, evals = train!(create_env, agent, training_episodes, run_name=pomdp_name)
+
+
 
 
 evaluate(env, agent; num_episodes=10000, max_steps=100) 
+
