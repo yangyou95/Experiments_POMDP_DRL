@@ -39,7 +39,6 @@ end
 # === 2. 初始化函数 ===
 function PPORNNAgent(
     action_space::Any, 
-    action_dim::Int,
     state_dim::Int;
     hidden_dim=64,
     rnn_hidden_size=128,
@@ -52,7 +51,7 @@ function PPORNNAgent(
     n_epochs=4,
     batch_size=2048,
     minibatch_size=64,
-    lr_policy=1e-4,
+    lr_policy=3e-4,
     lr_value=1e-4,
     device=Flux.cpu,
     clip_grads=true,
@@ -65,7 +64,7 @@ function PPORNNAgent(
     n_obs = state_dim
 
     # Input dimension: observation + one-hot action
-    input_dim = n_obs + action_dim
+    input_dim = n_obs + n_actions
  
 
     # Policy network with LSTM
@@ -109,17 +108,26 @@ function reset_hidden_states!(agent::PPORNNAgent)
     Flux.reset!(agent.value_net)
 end
 
+function process_action(action::Int, action_space::UnitRange{Int})
+    len = length(action_space)
+    idx = action - first(action_space) + 1
+    (idx < 1 || idx > len) && error("Action $action not in action space")
+    onehot = zeros(Float32, len)
+    onehot[idx] = 1.0f0
+    return onehot
+end
+
 # === 5. 构建动作-观察输入 ===
 function build_action_obs_input(state, prev_action::Int, agent::PPORNNAgent)
     # 将状态转换为Float32向量
     state_vec = Float32.(vec(state))
     
-    # 创建前一个动作的vector
-    action_vec = process_action(prev_action, agent.action_space)
+    # 创建前一个动作的one-hot编码
+    action_onehot = process_action(prev_action, agent.action_space)
     
     # 拼接状态和动作
     # input_vec = vcat(state_vec, action_onehot)
-    input_vec = vcat(action_vec, state_vec)
+    input_vec = vcat(action_onehot, state_vec)
 
     return input_vec
 end
