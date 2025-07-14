@@ -683,18 +683,11 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
         policy_loss = update_policy!(agent, sequences)
         value_loss = update_value!(agent, sequences)
 
-        # log results
-        push!(all_rewards, avg_reward)
-        push!(policy_losses, policy_loss)
-        push!(value_losses, value_loss)
-        @info "metrics" avg_reward=avg_reward policy_loss=policy_loss value_loss=value_loss step=update
-
-        # evaluation
+        # perform evaluation and assign eval_score
         if update % eval_interval == 0
             eval_env = use_parallel ? env_or_constructor() : env_or_constructor
             eval_score = evaluate(eval_env, agent)
             push!(eval_scores, eval_score)
-            @info "metrics" eval_score=eval_score step=update
             if verbose
                 println("Update $update | ",
                       "Threads: $(nthreads()) | ",
@@ -703,7 +696,15 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
                       "Value Loss: $(round(value_loss, digits=4)) | ",
                       "Eval: $(round(eval_score, digits=2))")
             end
+        else
+            eval_score = nothing
         end
+
+        # log results
+        push!(all_rewards, avg_reward)
+        push!(policy_losses, policy_loss)
+        push!(value_losses, value_loss)
+        @info "metrics" avg_reward=avg_reward policy_loss=policy_loss value_loss=value_loss eval_score=eval_score step=update
 
         # decay entropy coefficient
         agent.ent_coef *= 0.995f0
