@@ -22,6 +22,16 @@ function parse_args()
         "--cols"
         help = "Number of columns in RockSample grid"
         arg_type = Int
+
+        "--layer-size"
+        help = "Size of the hidden dense layer"
+        arg_type = Int
+        default = 64
+
+        "--rnn-hidden-size"
+        help = "Size of the RNN hidden state"
+        arg_type = Int
+        default = 64
     end
     return ArgParse.parse_args(s)
 end
@@ -31,6 +41,8 @@ const ARGS_PARSED = parse_args()
 println("Parsed arguments: $(ARGS_PARSED)")
 const ROWS = ARGS_PARSED["rows"]
 const COLS = ARGS_PARSED["cols"]
+const LAYER_SIZE = ARGS_PARSED["layer-size"]
+const RNN_HIDDEN_SIZE = ARGS_PARSED["rnn-hidden-size"]
 const BOOL_FULL_OBSERVABILITY = false#ARGS_PARSED["full-observability"]
 # using CUDA
 include("../Envs/Env.jl")
@@ -38,7 +50,7 @@ include("../Algorithms/PPO-RNN.jl")
 using RockSample
 
 pomdp = RockSamplePOMDP(ROWS, COLS)
-pomdp_name = "RS$(ROWS)$(COLS)"
+pomdp_name = "RS$(ROWS)$(COLS)_Layer$(LAYER_SIZE)_RNN$(RNN_HIDDEN_SIZE)"
 bool_full_observability = BOOL_FULL_OBSERVABILITY
 env = Env(pomdp, bool_full_observability)
 action_space = GetActionSpace(env)
@@ -65,8 +77,8 @@ end
 
 state_dim = GetObsDim(env)
 action_dim = length(action_space)
-layer_size = 64
-rnn_hidden_size = 64
+layer_size = LAYER_SIZE
+rnn_hidden_size = RNN_HIDDEN_SIZE
 gamma = discount(pomdp)
 training_episodes = 10000
 batch_size = 2048
@@ -75,7 +87,7 @@ batch_size = 2048
 # if want to use gpu, need to uncomment the below line, and use device=Flux.gpu
 # using CUDA
 
-agent = PPORNNAgent(action_space, action_dim, state_dim;
+agent = PPORNNAgent(action_space, state_dim;
     hidden_dim=layer_size, 
     rnn_hidden_size=rnn_hidden_size, 
     batch_size=batch_size, 

@@ -655,6 +655,7 @@ end
 function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_interval=100, verbose=true, run_name::String="PPO-RNN-Training")
     # Initialize native Julia Wandb run
     lg = WandbLogger(
+        entity = "julia-pomdp",
         project = "PPO-RNN-Training-Julia",
         name = run_name,
         config = Dict(

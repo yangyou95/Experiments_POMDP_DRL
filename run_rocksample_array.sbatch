@@ -18,12 +18,19 @@ PARAMS=(
   "15 15"
   "20 20"
 )
+# Define layer and RNN hidden sizes for each grid
+LAYER_SIZES=(64 64 128 256)
+RNN_HIDDEN_SIZES=(64 64 128 256)
 
 # 3) Select the right pair for this array task
 IDX=$((SLURM_ARRAY_TASK_ID - 1))
 read ROWS COLS <<< "${PARAMS[$IDX]}"
+LAYER_SIZE=${LAYER_SIZES[$IDX]}
+RNN_HIDDEN_SIZE=${RNN_HIDDEN_SIZES[$IDX]}
 
 echo "[$(date)] Task $SLURM_ARRAY_TASK_ID: RockSample ${ROWS}×${COLS}"
 
 # 4) Run your Julia script with the parsed arguments
-julia /home/users/ucakir/Experiments_POMDP_DRL/Julia_DRL_experiments/PPO-RNN-Experiments/ppo-rnn-rs79.jl --rows $ROWS --cols $COLS
+julia /home/users/ucakir/Experiments_POMDP_DRL/Julia_DRL_experiments/PPO-RNN-Experiments/ppo-rnn-rs79.jl \
+      --rows $ROWS --cols $COLS \
+      --layer-size $LAYER_SIZE --rnn-hidden-size $RNN_HIDDEN_SIZE
