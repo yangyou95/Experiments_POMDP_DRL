@@ -3,7 +3,7 @@
 #SBATCH --account=iecdt
 #SBATCH --partition=standard             
 #SBATCH --qos=standard                  
-#SBATCH --time=02:00:00                
+#SBATCH --time=24:00:00                
 #SBATCH --ntasks=1                    
 #SBATCH --output=logs/pomdp/rs_%A_%a.out  
 #SBATCH --error=logs/pomdp/rs_%A_%a.err  

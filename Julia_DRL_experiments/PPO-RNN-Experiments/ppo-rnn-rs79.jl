@@ -32,6 +32,72 @@ function parse_args()
         help = "Size of the RNN hidden state"
         arg_type = Int
         default = 64
+
+        "--batch-size"
+        help = "Batch size for training"
+        arg_type = Int
+        default = 4096
+
+        "--hidden-dim"
+        help = "Size of the hidden dense layer"
+        arg_type = Int
+        default = 64
+
+        "--sequence-length"
+        help = "Length of RNN training sequences"
+        arg_type = Int
+        default = 32
+
+        "--max-episode-length"
+        help = "Maximum episode length"
+        arg_type = Int
+        default = 200
+
+        "--gamma"
+        help = "Discount factor"
+        arg_type = Float64
+        default = 0.99
+
+        "--lambda"
+        help = "GAE λ parameter"
+        arg_type = Float64
+        default = 0.95
+
+        "--epsilon"
+        help = "PPO clip ε"
+        arg_type = Float64
+        default = 0.2
+
+        "--ent-coef"
+        help = "Entropy coefficient"
+        arg_type = Float64
+        default = 0.01
+
+        "--n-epochs"
+        help = "PPO epochs per update"
+        arg_type = Int
+        default = 4
+
+        "--minibatch-size"
+        help = "Minibatch size"
+        arg_type = Int
+        default = 64
+
+        "--lr-policy"
+        help = "Policy learning rate"
+        arg_type = Float64
+        default = 3e-4
+
+        "--lr-value"
+        help = "Value learning rate"
+        arg_type = Float64
+        default = 1e-4
+
+        "--num-updates"
+        help = "Number of training updates"
+        arg_type = Int
+        default = 10000
+
     end
     return ArgParse.parse_args(s)
 end
@@ -44,13 +110,42 @@ const COLS = ARGS_PARSED["cols"]
 const LAYER_SIZE = ARGS_PARSED["layer-size"]
 const RNN_HIDDEN_SIZE = ARGS_PARSED["rnn-hidden-size"]
 const BOOL_FULL_OBSERVABILITY = false#ARGS_PARSED["full-observability"]
+
+
+const HIDDEN_DIM          = ARGS_PARSED["hidden-dim"]
+const SEQUENCE_LENGTH     = ARGS_PARSED["sequence-length"]
+const MAX_EPISODE_LENGTH  = ARGS_PARSED["max-episode-length"]
+const GAMMA               = Float32(ARGS_PARSED["gamma"])
+const LAMBDA              = Float32(ARGS_PARSED["lambda"])
+const EPSILON             = Float32(ARGS_PARSED["epsilon"])
+const ENT_COEF            = Float32(ARGS_PARSED["ent-coef"])
+const N_EPOCHS            = ARGS_PARSED["n-epochs"]
+const BATCH_SIZE          = ARGS_PARSED["batch-size"]
+const MINIBATCH_SIZE      = ARGS_PARSED["minibatch-size"]
+const LR_POLICY           = ARGS_PARSED["lr-policy"]
+const LR_VALUE            = ARGS_PARSED["lr-value"]
+const NUM_UPDATES         = ARGS_PARSED["num-updates"]
+
+
 # using CUDA
 include("../Envs/Env.jl")
 include("../Algorithms/PPO-RNN.jl")
 using RockSample
 
 pomdp = RockSamplePOMDP(ROWS, COLS)
-pomdp_name = "RS$(ROWS)$(COLS)_Layer$(LAYER_SIZE)_RNN$(RNN_HIDDEN_SIZE)"
+
+
+
+training_episodes = 10000
+batch_size = ARGS_PARSED["batch-size"] 
+#4096
+
+
+
+
+
+
+pomdp_name = "RS$(ROWS)$(COLS)_Layer$(LAYER_SIZE)_RNN$(RNN_HIDDEN_SIZE)_BS$(batch_size)"
 bool_full_observability = BOOL_FULL_OBSERVABILITY
 env = Env(pomdp, bool_full_observability)
 action_space = GetActionSpace(env)
@@ -80,22 +175,31 @@ action_dim = length(action_space)
 layer_size = LAYER_SIZE
 rnn_hidden_size = RNN_HIDDEN_SIZE
 gamma = discount(pomdp)
-training_episodes = 10000
-batch_size = 2048
+
 
 
 # if want to use gpu, need to uncomment the below line, and use device=Flux.gpu
 # using CUDA
 
 agent = PPORNNAgent(action_space, state_dim;
-    hidden_dim=layer_size, 
-    rnn_hidden_size=rnn_hidden_size, 
-    batch_size=batch_size, 
-    device=Flux.cpu) 
+    hidden_dim=HIDDEN_DIM,
+    rnn_hidden_size=RNN_HIDDEN_SIZE,
+    sequence_length=SEQUENCE_LENGTH,
+    max_episode_length=MAX_EPISODE_LENGTH,
+    γ=GAMMA,
+    λ=LAMBDA,
+    ϵ=EPSILON,
+    ent_coef=ENT_COEF,
+    n_epochs=N_EPOCHS,
+    batch_size=BATCH_SIZE,
+    minibatch_size=MINIBATCH_SIZE,
+    lr_policy=LR_POLICY,
+    lr_value=LR_VALUE,
+    device=Flux.cpu)
 
 
     # 训练
-rewards, losses, evals = train!(create_env, agent, training_episodes, run_name=pomdp_name)
+rewards, losses, evals = train!(create_env, agent, NUM_UPDATES, run_name=pomdp_name)
 
 
 
