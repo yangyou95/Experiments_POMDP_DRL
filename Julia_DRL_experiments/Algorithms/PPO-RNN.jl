@@ -40,7 +40,7 @@ end
 function PPORNNAgent(
     action_space::Any, 
     state_dim::Int;
-    hidden_dim=64,
+    hidden_dim=128,
     rnn_hidden_size=128,
     sequence_length=32,
     max_episode_length=200,
@@ -67,22 +67,36 @@ function PPORNNAgent(
     input_dim = n_obs + n_actions
  
 
-    # Policy network with LSTM
+    # Policy network with LSTM OLD VERSION
+    # policy_net = Chain(
+    #     # Dense(input_dim => hidden_dim, tanh),
+    #     # LSTM(hidden_dim => rnn_hidden_size),
+    #     LSTM(input_dim => rnn_hidden_size),
+    #     Dense(rnn_hidden_size => hidden_dim, tanh),
+    #     Dense(hidden_dim => n_actions)
+    # ) |> device
+    
+    # # Value network with LSTM
+    # value_net = Chain(
+    #     # Dense(input_dim => hidden_dim, tanh),
+    #     # LSTM(hidden_dim => rnn_hidden_size),
+    #     LSTM(input_dim => rnn_hidden_size),
+    #     Dense(rnn_hidden_size => hidden_dim, tanh),
+    #     Dense(hidden_dim => 1, identity)
+    # ) |> device
+
+
     policy_net = Chain(
-        # Dense(input_dim => hidden_dim, tanh),
-        # LSTM(hidden_dim => rnn_hidden_size),
-        LSTM(input_dim => rnn_hidden_size),
-        Dense(rnn_hidden_size => hidden_dim, tanh),
-        Dense(hidden_dim => n_actions)
+        GRU(input_dim => rnn_hidden_size),
+        Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
+        Dense(hidden_dim => n_actions)              # Actor-Critic Head Layer 2 (Output)
     ) |> device
     
-    # Value network with LSTM
+    # Value network with GRU
     value_net = Chain(
-        # Dense(input_dim => hidden_dim, tanh),
-        # LSTM(hidden_dim => rnn_hidden_size),
-        LSTM(input_dim => rnn_hidden_size),
-        Dense(rnn_hidden_size => hidden_dim, tanh),
-        Dense(hidden_dim => 1, identity)
+        GRU(input_dim => rnn_hidden_size),
+        Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
+        Dense(hidden_dim => 1)                      # Actor-Critic Head Layer 2 (Output)
     ) |> device
     
     # 使用Flux的新优化器接口
