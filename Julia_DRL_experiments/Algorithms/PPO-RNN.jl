@@ -68,36 +68,38 @@ function PPORNNAgent(
  
 
     # Policy network with LSTM OLD VERSION
-    # policy_net = Chain(
-    #     # Dense(input_dim => hidden_dim, tanh),
-    #     # LSTM(hidden_dim => rnn_hidden_size),
-    #     LSTM(input_dim => rnn_hidden_size),
-    #     Dense(rnn_hidden_size => hidden_dim, tanh),
-    #     Dense(hidden_dim => n_actions)
-    # ) |> device
-    
-    # # Value network with LSTM
-    # value_net = Chain(
-    #     # Dense(input_dim => hidden_dim, tanh),
-    #     # LSTM(hidden_dim => rnn_hidden_size),
-    #     LSTM(input_dim => rnn_hidden_size),
-    #     Dense(rnn_hidden_size => hidden_dim, tanh),
-    #     Dense(hidden_dim => 1, identity)
-    # ) |> device
-
-
     policy_net = Chain(
-        GRU(input_dim => rnn_hidden_size),
-        Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
-        Dense(hidden_dim => n_actions)              # Actor-Critic Head Layer 2 (Output)
+        # Dense(input_dim => hidden_dim, tanh),
+        # LSTM(hidden_dim => rnn_hidden_size),
+        LSTM(input_dim => rnn_hidden_size),
+        Dense(rnn_hidden_size => hidden_dim, relu),
+        Dense(hidden_dim => n_actions)
     ) |> device
     
-    # Value network with GRU
+    # Value network with LSTM
     value_net = Chain(
-        GRU(input_dim => rnn_hidden_size),
-        Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
-        Dense(hidden_dim => 1)                      # Actor-Critic Head Layer 2 (Output)
+        # Dense(input_dim => hidden_dim, tanh),
+        # LSTM(hidden_dim => rnn_hidden_size),
+        LSTM(input_dim => rnn_hidden_size),
+        Dense(rnn_hidden_size => hidden_dim, relu),
+        Dense(hidden_dim => 1, identity)
     ) |> device
+
+
+
+
+    # policy_net = Chain(
+    #     GRU(input_dim => rnn_hidden_size),
+    #     Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
+    #     Dense(hidden_dim => n_actions)              # Actor-Critic Head Layer 2 (Output)
+    # ) |> device
+    
+    # # Value network with GRU
+    # value_net = Chain(
+    #     GRU(input_dim => rnn_hidden_size),
+    #     Dense(rnn_hidden_size => hidden_dim, relu), # Actor-Critic Head Layer 1
+    #     Dense(hidden_dim => 1)                      # Actor-Critic Head Layer 2 (Output)
+    # ) |> device
     
     # 使用Flux的新优化器接口
     optimizer_policy = Flux.setup(Adam(lr_policy), policy_net)
@@ -666,11 +668,11 @@ function clip_gradients(grads, clip_value)
 end
 
 # === 17. 训练循环 ===
-function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_interval=100, verbose=true, run_name::String="PPO-RNN-Training")
+function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_interval=100, verbose=true, run_name::String="PPO-RNN-Training", wandb_project::String="PPO-RNN-Training-Julia")
     # Initialize native Julia Wandb run
     lg = WandbLogger(
         entity = "julia-pomdp",
-        project = "PPO-RNN-Training-Julia",
+        project = wandb_project,
         name = run_name,
         config = Dict(
             "gamma" => agent.γ,
@@ -681,7 +683,13 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
             "sequence_length" => agent.sequence_length,
             "batch_size" => agent.batch_size,
             "minibatch_size" => agent.minibatch_size,
-            "n_epochs" => agent.n_epochs
+            "n_epochs" => agent.n_epochs,
+            "hidden_dim" => size(agent.policy_net[2].weight, 2),
+            "max_episode_length" => agent.max_episode_length,
+            "clip_grads" => agent.clip_grads,
+            "clip_value" => agent.clip_value,
+            "n_envs" => agent.n_envs,
+            "use_threading" => agent.use_threading
         )
     )
     global_logger(lg)
@@ -694,7 +702,28 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
     # 检查是否使用并行收集
     use_parallel = agent.use_threading && isa(env_or_constructor, Function)
 
+
+
+
+
+    # initial learning rates
+    # initial_lr_policy = agent.optimizer_policy.layers[1].eta
+    # initial_lr_value = agent.optimizer_value.layers[1].eta
+
+
+
     @showprogress for update in 1:num_updates
+
+        # Linearly anneal the learning rate
+        # frac = 1.0f0 - (update - 1.0f0) / num_updates
+        # new_lr_policy = initial_lr_policy * frac
+        # new_lr_value = initial_lr_value * frac
+        # agent.optimizer_policy.layers[1].eta = new_lr_policy
+        # agent.optimizer_value.layers[1].eta = new_lr_value
+
+
+
+
         # collect trajectories
         if use_parallel
             sequences, avg_reward = collect_trajectories_parallel(env_or_constructor, agent, agent.batch_size)
@@ -723,6 +752,9 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
             eval_score = nothing
         end
 
+        # every 1k updates log evaluation score on full 1e5 episodes
+
+
         # log results
         push!(all_rewards, avg_reward)
         push!(policy_losses, policy_loss)
@@ -730,9 +762,18 @@ function train!(env_or_constructor, agent::PPORNNAgent, num_updates::Int; eval_i
         @info "metrics" avg_reward=avg_reward policy_loss=policy_loss value_loss=value_loss eval_score=eval_score step=update
 
         # decay entropy coefficient
-        agent.ent_coef *= 0.995f0
+        #Remove entropy coefficient decay for now
+        #agent.ent_coef *= 0.995f0
     end
 
+
+    evaluation_result = evaluate(env_or_constructor(), agent, num_episodes=100000)
+    @info "Final Evaluation Result: $(evaluation_result)"
+    
+    # Log final evaluation to Weights & Biases explicitly
+    @info "final_eval" final_eval=evaluation_result step=num_updates
+   
+    
     close(lg)
     return (all_rewards, policy_losses, value_losses, eval_scores)
 end

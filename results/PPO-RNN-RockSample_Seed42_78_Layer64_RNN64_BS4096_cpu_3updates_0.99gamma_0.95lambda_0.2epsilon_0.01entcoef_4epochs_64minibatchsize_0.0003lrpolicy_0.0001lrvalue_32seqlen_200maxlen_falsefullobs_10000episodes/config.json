@@ -1,0 +1,23 @@
+{
+    "batch-size": 4096,
+    "num-updates": 3,
+    "lr-value": 0.0001,
+    "layer-size": 64,
+    "runname": "PPO-RNN-RockSample",
+    "device": "cpu",
+    "hidden-dim": 64,
+    "sequence-length": 32,
+    "ent-coef": 0.01,
+    "rnn-hidden-size": 64,
+    "lambda": 0.95,
+    "max-episode-length": 200,
+    "cols": 8,
+    "wandb-project": "test",
+    "n-epochs": 4,
+    "rows": 7,
+    "epsilon": 0.2,
+    "gamma": 0.99,
+    "seed": 42,
+    "lr-policy": 0.0003,
+    "minibatch-size": 64
+}

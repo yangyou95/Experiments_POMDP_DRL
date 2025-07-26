@@ -34,8 +34,8 @@ MAX_EPISODE_LENGTHS=(100 200 300 100 200 300 100 200 300 200)
 
 # 3) Select hyperparameters for this array task
 IDX=$((SLURM_ARRAY_TASK_ID - 1))
-ROWS=7
-COLS=8
+ROWS=20
+COLS=20
 LAYER_SIZE=${LAYER_SIZES[$IDX]}
 RNN_HIDDEN_SIZE=${RNN_HIDDEN_SIZES[$IDX]}
 
@@ -53,6 +53,14 @@ MINIBATCH_SIZE=${MINIBATCH_SIZES[$IDX]}
 SEQUENCE_LENGTH=${SEQ_LENGTHS[$IDX]}
 MAX_EPISODE_LENGTH=${MAX_EPISODE_LENGTHS[$IDX]}
 
+
+
+
+
+runname="LSTM_RELU"
+
+
+
 echo "[$(date)] Task $SLURM_ARRAY_TASK_ID: RockSample ${ROWS}×${COLS} | Layer ${LAYER_SIZE} | RNN ${RNN_HIDDEN_SIZE}"
 
 # 4) Run your Julia script with the parsed arguments
@@ -63,4 +71,6 @@ julia /home/users/ucakir/Experiments_POMDP_DRL/Julia_DRL_experiments/PPO-RNN-Exp
       --gamma $GAMMA --epsilon $EPSILON --ent-coef $ENT_COEF \
       --lambda $LAMBDA --n-epochs $N_EPOCHS \
       --batch-size $BATCH_SIZE --minibatch-size $MINIBATCH_SIZE \
-      --sequence-length $SEQUENCE_LENGTH --max-episode-length $MAX_EPISODE_LENGTH
+      --sequence-length $SEQUENCE_LENGTH --max-episode-length $MAX_EPISODE_LENGTH \
+      --num-updates 100000 \
+      --runname $runname
