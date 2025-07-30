@@ -35,14 +35,15 @@ def analyze_and_plot(results_path: str):
     print("="*50)
     final_metrics = out.get('final_eval_metric', {})
     if final_metrics:
-        returns = final_metrics.get('returned_episode_returns')
+        # Use discounted returns instead of undiscounted returns
+        returns = final_metrics.get('returned_discounted_episode_returns')
         mask = final_metrics.get('returned_episode', np.ones_like(returns, dtype=bool))
         
         valid_returns = returns[mask]
         if valid_returns.size > 0:
             avg_return = np.mean(valid_returns)
             std_return = np.std(valid_returns)
-            print(f"Average Final Return: {avg_return:.2f} +/- {std_return:.2f}")
+            print(f"Average Final Discounted Return: {avg_return:.2f} +/- {std_return:.2f}")
         else:
             print("No completed episodes found in final evaluation.")
     else:
@@ -57,7 +58,7 @@ def analyze_and_plot(results_path: str):
         
     # Define metrics to plot
     plot_specs = {
-        "Episodic Return": "returned_episode_returns",
+        "Episodic Discounted Return": "returned_discounted_episode_returns",
         "Value Loss": "value_loss",
         "Actor Loss": "loss_actor",
         "Entropy": "entropy",
@@ -82,7 +83,7 @@ def analyze_and_plot(results_path: str):
         metric_data = np.array(training_metrics[key])
 
         # For returns, we only want to plot completed episodes
-        if key == "returned_episode_returns":
+        if key == "returned_discounted_episode_returns":
             mask = training_metrics['returned_episode']
             # Calculate mean and std only on valid returns per timestep
             mean_values = [metric_data[s, t][mask[s, t]].mean() if mask[s, t].any() else np.nan 
