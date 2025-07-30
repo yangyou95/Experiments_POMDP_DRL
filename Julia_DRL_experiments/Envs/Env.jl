@@ -1,5 +1,6 @@
 using POMDPModels
 using POMDPs
+using RockSample
 
 
 # Define a simple CartPole environment
@@ -32,7 +33,7 @@ function reset!(env::Env)
     env.state = rand(initialstate(env.model))
     s_vec = convert_s(Vector{Float32}, env.state, env.model)
 
-    if !bool_full_observability
+    if !env.bool_full_observability
         a = rand(actions(env.model))
         sp, o, r = @gen(:sp, :o, :r)(env.model, env.state, a)
         o_vec = convert_o(Vector{Float32}, o, env.model)
@@ -69,13 +70,17 @@ function GetStateDim(env::Env)
 end
 
 function GetObsDim(env::Env)
-    b0 = initialstate(env.model)
-    action_space = actions(env.model)
-    sp, o, r = @gen(:sp, :o, :r)(pomdp, rand(b0), rand(action_space))
-    o_vec = convert_o(Vector{Float32}, o, pomdp)
-    println(sp)
-    println(o_vec)
-    return length(o_vec)
+    # For RockSamplePOMDP with partial observability, observations are converted to 3-dimensional vectors
+    if env.model isa RockSamplePOMDP && !env.bool_full_observability
+        return 3
+    else
+        # Fallback for other cases
+        b0 = initialstate(env.model)
+        action_space = actions(env.model)
+        sp, o, r = @gen(:sp, :o, :r)(env.model, rand(b0), rand(action_space))
+        o_vec = convert_o(Vector{Float32}, o, env.model)
+        return length(o_vec)
+    end
 end
 
 function GetStateSpace(env::Env)

@@ -509,21 +509,22 @@ function compute_policy_batch_loss(agent::PPORNNAgent, sequences, batch_indices)
             for t in 1:agent.sequence_length
                 if mask[t]
                     logits = logits_seq[:, t:t]
-                    probs = softmax(logits)
                     
-                    # 计算新的log概率
-                    # onehot_action = onehotbatch([actions[t]], agent.action_space) |> agent.device
+                    # Use logsoftmax for numerical stability
+                    log_probs = logsoftmax(logits)
+                    
+                    # 计算新的log概率 (more numerically stable)
                     onehot_action = onehotbatch([actions[t]], 1:length(agent.action_space)) |> agent.device
-                    selected_prob = sum(probs .* onehot_action)
-                    new_log_prob = log(selected_prob + 1f-8)
+                    new_log_prob = sum(log_probs .* onehot_action)
                     
-                    # PPO损失
-                    ratio = exp(new_log_prob - old_log_probs[t])
+                    # PPO损失 (with clipping to prevent extreme values)
+                    ratio = exp(clamp(new_log_prob - old_log_probs[t], -10.0f0, 10.0f0))
                     surr1 = ratio * advantages[t]
                     surr2 = clamp(ratio, 1f0 - agent.ϵ, 1f0 + agent.ϵ) * advantages[t]
                     policy_loss = -min(surr1, surr2)
                     
-                    # 熵损失
+                    # 熵损失 (more numerically stable)
+                    probs = softmax(logits)
                     entropy = -sum(probs .* log.(probs .+ 1f-8))
                     
                     batch_loss += policy_loss - agent.ent_coef * entropy
