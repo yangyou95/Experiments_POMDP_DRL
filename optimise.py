@@ -5,7 +5,7 @@ import re
 import argparse
 
 # --- Configuration ---
-ENV_NAME = "lightdark"
+
 N_SEEDS = 3  # Use fewer seeds for faster optimization
 TOTAL_STEPS = 800000  # Use fewer steps to speed up each trial
 N_TRIALS = 50  # The number of hyperparameter combinations to test
@@ -27,12 +27,13 @@ def objective(trial: optuna.Trial) -> float:
     entropy_coeff = trial.suggest_float("entropy_coeff", 0.0, 0.1)
     vf_coeff = trial.suggest_float("vf_coeff", 0.3, 0.7)
     lambda1 = trial.suggest_float("lambda1", 0.9, 0.99)  # GAE Lambda
+    lambda_0 = trial.suggest_float("lambda0", 0.1, 0.95)  # Discount factor for rewards
     max_grad_norm = trial.suggest_float("max_grad_norm", 0.5, 2.0)
 
     # --- Architecture and Batching ---
     num_envs = trial.suggest_categorical("num_envs", [64, 128, 256])
     num_steps = trial.suggest_categorical("num_steps", [64, 128, 256])
-    hidden_size = trial.suggest_categorical("hidden_size", [128, 256, 512])
+    hidden_size = trial.suggest_categorical("hidden_size", [128, 256, 512,1024])
     update_epochs = trial.suggest_int("update_epochs", 2, 8)
     num_minibatches = trial.suggest_categorical("num_minibatches", [2, 4, 8, 16])
 
@@ -83,7 +84,7 @@ def objective(trial: optuna.Trial) -> float:
         "0",
         "--action_concat",
         "--lambda0",
-        "0.1",  # This seems fixed in your scripts
+        str(lambda_0),
         "--seed",
         "2024",
         "--n_seeds",
@@ -98,7 +99,11 @@ def objective(trial: optuna.Trial) -> float:
         "--num_eval_envs",
         "5",
         "--show_discounted",
+        "--gamma",
+        str(gamma),  # Use the gamma value from CLI args
     ]
+    print(f"  Command: {' '.join(command)}")
+    
 
     # 3. Run the command and capture output
     try:
@@ -139,11 +144,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Optuna hyper‑parameter sweep for PPO on JAX/Gymnax environments."
     )
+    default_env = "lightdark"  # Default environment name
     parser.add_argument(
         "--env",
         type=str,
-        default=ENV_NAME,
-        help=f"Environment name (default: {ENV_NAME})",
+        default=default_env,
+        help=f"Environment name (default: {default_env})",
     )
     parser.add_argument(
         "--n_trials",
@@ -151,11 +157,18 @@ if __name__ == "__main__":
         default=N_TRIALS,
         help=f"Number of Optuna trials (default: {N_TRIALS})",
     )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.95,
+        help="Discount factor for rewards (default: 0.95)",
+    )
     cli_args = parser.parse_args()
 
     # Allow objective() and command construction to see the chosen env
     ENV_NAME = cli_args.env
     n_trials = cli_args.n_trials
+    gamma = cli_args.gamma
     
     print(f"Running Optuna optimization for {ENV_NAME} with {n_trials} trials...")
 
