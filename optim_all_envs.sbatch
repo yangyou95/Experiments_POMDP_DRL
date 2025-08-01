@@ -52,7 +52,7 @@ source /home/users/ucakir/Experiments_POMDP_DRL/.venv/bin/activate
 # The --n_trials argument is also added so you can easily change it here
 python /home/users/ucakir/Experiments_POMDP_DRL/optimise.py \
     --env "$CURRENT_ENV" \
-    --n_trials 50
+    --n_trials 50 --gamma 0.95
 
 
 echo "------------------------------------------------"

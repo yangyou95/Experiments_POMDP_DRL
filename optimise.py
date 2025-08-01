@@ -93,7 +93,7 @@ def objective(trial: optuna.Trial) -> float:
         str(TOTAL_STEPS),
         "--anneal_lr",
         "--default_max_steps_in_episode",
-        "100",
+        "1000",
         "--platform",
         "gpu",
         "--num_eval_envs",
